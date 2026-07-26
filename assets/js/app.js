@@ -1,0 +1,507 @@
+/* =========================================================
+   SpeakUp — uygulama mantığı
+   ========================================================= */
+(function () {
+  "use strict";
+
+  /* ---------------- durum ---------------- */
+  const store = {
+    get(k, def) {
+      try { const v = localStorage.getItem("speakup:" + k); return v === null ? def : JSON.parse(v); }
+      catch (e) { return def; }
+    },
+    set(k, v) {
+      try { localStorage.setItem("speakup:" + k, JSON.stringify(v)); } catch (e) {}
+    },
+  };
+
+  const state = {
+    level:    store.get("level", "a1"),
+    scenario: store.get("scenario", "passport"),
+    tab:      "dialogue",
+    showTR:   store.get("showTR", true),
+    speed:    store.get("speed", 0.9),
+  };
+
+  const SPEEDS = [0.7, 0.85, 1, 1.15];
+
+  /* ---------------- kısayollar ---------------- */
+  const $  = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  const PANELS = { dialogue: $("#panel-dialogue"), reading: $("#panel-reading"), grammar: $("#panel-grammar"), pron: $("#panel-pron") };
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $("#toast");
+    t.textContent = msg;
+    t.classList.add("is-on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("is-on"), 2200);
+  }
+
+  const data = () => (CONTENT[state.scenario] || {})[state.level] || null;
+
+  /* =========================================================
+     SES — Web Speech API
+     ========================================================= */
+  const speech = {
+    supported: "speechSynthesis" in window,
+    voices: [],
+    vOfficer: null,
+    vPassenger: null,
+    queue: [],
+    idx: -1,
+    playing: false,
+
+    loadVoices() {
+      if (!this.supported) return;
+      this.voices = window.speechSynthesis.getVoices() || [];
+      const en = this.voices.filter((v) => /^en(-|_)/i.test(v.lang));
+      if (!en.length) return;
+
+      const pick = (re) => en.find((v) => re.test(v.name)) || null;
+      const gb = en.filter((v) => /en(-|_)GB/i.test(v.lang));
+      const us = en.filter((v) => /en(-|_)US/i.test(v.lang));
+      const pool = (gb.length ? gb : us.length ? us : en);
+
+      // İki farklı ses bulmaya çalış: memur ve yolcu ayrışsın
+      this.vOfficer   = pick(/Daniel|Arthur|Google UK English Male|Male/i) || pool[0] || en[0];
+      this.vPassenger = pick(/Samantha|Serena|Kate|Google UK English Female|Female/i) || pool[1] || pool[0] || en[0];
+      if (this.vPassenger === this.vOfficer && pool.length > 1) {
+        this.vPassenger = pool.find((v) => v !== this.vOfficer) || this.vOfficer;
+      }
+    },
+
+    utter(text, role) {
+      const u = new SpeechSynthesisUtterance(text);
+      const v = role === "passenger" ? this.vPassenger : this.vOfficer;
+      if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = "en-GB"; }
+      u.rate = state.speed;
+      u.pitch = role === "passenger" ? 1.06 : 0.94;
+      return u;
+    },
+
+    say(text, role) {
+      if (!this.supported) { toast("Bu tarayıcı sesli okumayı desteklemiyor 😕"); return; }
+      this.stop();
+      setTimeout(() => { window.speechSynthesis.speak(this.utter(text, role)); }, 60);
+    },
+
+    // Diyaloğu baştan sona oynat
+    playAll(lines, onStep, onDone) {
+      if (!this.supported) { toast("Bu tarayıcı sesli okumayı desteklemiyor 😕"); return; }
+      this.stop();
+      this.queue = lines.slice();
+      this.idx = -1;
+      this.playing = true;
+      const next = () => {
+        if (!this.playing) return;
+        this.idx++;
+        if (this.idx >= this.queue.length) { this.playing = false; onDone && onDone(); return; }
+        const line = this.queue[this.idx];
+        onStep && onStep(this.idx);
+        const u = this.utter(line.en, line.role);
+        u.onend = () => setTimeout(next, 320);
+        u.onerror = () => { this.playing = false; onDone && onDone(); };
+        window.speechSynthesis.speak(u);
+      };
+      setTimeout(next, 80);
+    },
+
+    stop() {
+      this.playing = false;
+      this.idx = -1;
+      if (this.supported) { try { window.speechSynthesis.cancel(); } catch (e) {} }
+    },
+  };
+
+  if (speech.supported) {
+    speech.loadVoices();
+    window.speechSynthesis.onvoiceschanged = () => speech.loadVoices();
+  }
+
+  /* =========================================================
+     SEVİYE & SENARYO SEÇİCİLER
+     ========================================================= */
+  function renderLevels() {
+    $("#levelChips").innerHTML = LEVELS.map((l) => `
+      <button class="chip${l.id === state.level ? " is-active" : ""}" data-level="${l.id}" role="tab"
+              aria-selected="${l.id === state.level}">
+        ${l.name}<small>${esc(l.label)}</small>
+      </button>`).join("");
+
+    const cur = LEVELS.find((l) => l.id === state.level);
+    $("#levelHint").innerHTML = `<b>${cur.name} · ${esc(cur.label)}</b> — ${esc(cur.desc)}`;
+  }
+
+  function renderScenarios() {
+    $("#scenarioCards").innerHTML = SCENARIOS.map((s) => `
+      <button class="scard${s.id === state.scenario && s.ready ? " is-active" : ""}${s.ready ? "" : " is-locked"}"
+              data-scenario="${s.id}" ${s.ready ? "" : 'data-locked="1"'}>
+        <span class="scard__emoji">${s.emoji}</span>
+        <span class="scard__title">${esc(s.title)}</span>
+        <span class="scard__sub">${esc(s.subtitle)}</span>
+      </button>`).join("");
+  }
+
+  /* =========================================================
+     PANELLER
+     ========================================================= */
+  function renderDialogue() {
+    const d = data();
+    if (!d) return (PANELS.dialogue.innerHTML = emptyState());
+    const dl = d.dialogue;
+
+    PANELS.dialogue.innerHTML = `
+      <div class="section-head">
+        <h3>${esc(dl.title)}</h3>
+        <span>${dl.lines.length} replik</span>
+      </div>
+
+      <div class="audiobar">
+        <button class="btn btn--primary" id="playAll">▶︎ Diyaloğu dinle</button>
+        <button class="btn btn--ghost btn--speed" id="speedBtn">${state.speed}×</button>
+        <button class="btn btn--ghost" id="stopBtn" title="Durdur">■</button>
+      </div>
+
+      <div class="card">
+        <p class="card__sub" style="margin-top:0">${esc(dl.summary)}</p>
+      </div>
+
+      <div class="card" id="lines">
+        ${dl.lines.map((l, i) => `
+          <button class="line line--${l.role}" data-i="${i}">
+            <span class="line__av">${l.role === "officer" ? "🛂" : "🧍"}</span>
+            <span class="line__body">
+              <span class="line__who">${l.role === "officer" ? "Memur" : "Yolcu"}</span>
+              <span class="line__en">${esc(l.en)}</span>
+              ${state.showTR ? `<span class="line__tr">${esc(l.tr)}</span>` : ""}
+              ${l.note ? `<span class="line__note">💡 ${esc(l.note)}</span>` : ""}
+            </span>
+            <span class="line__play">▶</span>
+          </button>`).join("")}
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <h4 class="card__title">🎯 Nasıl çalışılır?</h4>
+        </div>
+        <p class="card__sub" style="margin-top:0">
+          Önce diyaloğu bir kez baştan sona dinle. Sonra her replik satırına dokunup tek tek tekrar et —
+          sesli tekrar etmeden ilerleme. Son turda TR çeviriyi kapat (üstteki <b>TR</b> düğmesi) ve
+          sadece İngilizceyi anlamaya çalış.
+        </p>
+      </div>`;
+  }
+
+  function wrapWords(text) {
+    return esc(text).split(" ").map((w) => `<span class="w">${w}</span>`).join(" ");
+  }
+
+  function renderReading() {
+    const d = data();
+    if (!d) return (PANELS.reading.innerHTML = emptyState());
+    const r = d.reading;
+
+    PANELS.reading.innerHTML = `
+      <div class="section-head">
+        <h3>${esc(r.title)}</h3>
+        <span>${r.text.join(" ").split(/\s+/).length} kelime</span>
+      </div>
+
+      <div class="audiobar">
+        <button class="btn btn--primary" id="readAloud">▶︎ Metni dinle</button>
+        <button class="btn btn--ghost btn--speed" id="speedBtn2">${state.speed}×</button>
+        <button class="btn btn--ghost" id="stopBtn2" title="Durdur">■</button>
+      </div>
+
+      <div class="card">
+        <div class="reading__text" id="readingText">
+          ${r.text.map((p) => `<p>${wrapWords(p)}</p>`).join("")}
+        </div>
+        <p class="card__sub" style="margin-top:14px;font-size:12.5px">
+          👆 Herhangi bir kelimeye dokun, telaffuzunu dinle.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card__head"><h4 class="card__title">📌 Kelimeler <span class="badge">${r.glossary.length}</span></h4></div>
+        <div class="gloss">
+          ${r.glossary.map((g) => `
+            <button class="gloss__item" data-say="${esc(g.en)}">
+              <span class="gloss__en">${esc(g.en)}</span>
+              <span class="gloss__arrow">→</span>
+              <span class="gloss__tr">${esc(g.tr)}</span>
+              <span class="gloss__spk">🔊</span>
+            </button>`).join("")}
+        </div>
+      </div>
+
+      <div class="card" id="quiz">
+        <div class="card__head"><h4 class="card__title">✅ Anladın mı?</h4></div>
+        ${r.quiz.map((q, qi) => `
+          <div class="quiz__block">
+            <p class="quiz__q"><i>${qi + 1}.</i> ${esc(q.q)}</p>
+            <div class="quiz__opts">
+              ${q.options.map((o, oi) => `
+                <button class="quiz__opt" data-q="${qi}" data-o="${oi}" data-ans="${q.answer}">${esc(o)}</button>`).join("")}
+            </div>
+          </div>`).join("")}
+      </div>`;
+  }
+
+  function renderGrammar() {
+    const d = data();
+    if (!d) return (PANELS.grammar.innerHTML = emptyState());
+
+    PANELS.grammar.innerHTML = `
+      <div class="section-head">
+        <h3>Gramer</h3>
+        <span>${d.grammar.length} konu · ${state.level.toUpperCase()}</span>
+      </div>
+      <div class="grid-2">
+      ${d.grammar.map((g) => `
+        <div class="card">
+          <div class="card__head"><h4 class="card__title">${esc(g.title)}</h4></div>
+          <p class="gr__explain">${esc(g.explain)}</p>
+          ${g.examples.map((ex) => `
+            <button class="gr__ex" data-say="${esc(ex.en)}">
+              <span class="gr__ex-body">
+                <span class="gr__ex-en">${esc(ex.en)}</span>
+                ${state.showTR ? `<span class="gr__ex-tr">${esc(ex.tr)}</span>` : ""}
+              </span>
+              <span class="gr__ex-spk">🔊</span>
+            </button>`).join("")}
+          <p class="gr__tip"><b>İpucu:</b> ${esc(g.tip)}</p>
+        </div>`).join("")}
+      </div>`;
+  }
+
+  function renderPron() {
+    const d = data();
+    if (!d) return (PANELS.pron.innerHTML = emptyState());
+
+    PANELS.pron.innerHTML = `
+      <div class="section-head">
+        <h3>Telaffuz</h3>
+        <span>${d.pronunciation.length} kelime</span>
+      </div>
+
+      <div class="card">
+        <div class="card__head"><h4 class="card__title">🗣️ Bu senaryonun zor kelimeleri</h4>
+        <p class="card__sub">Karta dokun, dinle, sesli tekrar et. Yavaşlatmak için hızı <b>0.7×</b> yap.</p></div>
+        ${d.pronunciation.map((p) => `
+          <button class="pron" data-say="${esc(p.word)}">
+            <span class="pron__body">
+              <span class="pron__word">${esc(p.word)}</span>
+              <span class="pron__ipa">${esc(p.ipa)}</span>
+              <span class="pron__tip">${esc(p.tip)}</span>
+            </span>
+            <span class="pron__btn">🔊</span>
+          </button>`).join("")}
+      </div>
+
+      <div class="card">
+        <div class="card__head"><h4 class="card__title">⚡ Hız ayarı</h4></div>
+        <div class="audiobar" style="position:static;margin:0;background:var(--surface-2)">
+          <button class="btn btn--ghost btn--speed" id="speedBtn3" style="flex:1">Konuşma hızı: ${state.speed}×</button>
+          <button class="btn btn--ghost" id="stopBtn3" title="Durdur">■</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__head"><h4 class="card__title">🇹🇷 Türklerin klasik tuzakları</h4></div>
+        <p class="gr__explain" style="margin:0">
+          • <b>th</b> sesi: dilin ucu dişlerin arasına — “thank” ≠ “tenk”.<br>
+          • <b>w / v</b> ayrımı: “where” dudaklar büzülür, “very” üst diş alt dudağa değer.<br>
+          • Kelime sonu <b>-ed</b>: t/d ile bitiyorsa “ıd”, sessizden sonra “t”, sesliden sonra “d”.<br>
+          • Türkçede olmayan sesli uzatmalar: “ship” ≠ “sheep”, “full” ≠ “fool”.<br>
+          • Ünsüz kümesi başına sesli ekleme: “student” → “sıtudent” değil, “stu-dent”.
+        </p>
+      </div>`;
+  }
+
+  function emptyState() {
+    return `<div class="card"><div class="card__head"><h4 class="card__title">🚧 Hazırlanıyor</h4></div>
+      <p class="card__sub" style="margin-top:0">Bu senaryo bu seviyede henüz yok. Başka bir seviye ya da senaryo seç.</p></div>`;
+  }
+
+  function renderAll() {
+    renderLevels();
+    renderScenarios();
+    renderDialogue();
+    renderReading();
+    renderGrammar();
+    renderPron();
+  }
+
+  /* =========================================================
+     SEKME GEÇİŞİ
+     ========================================================= */
+  function setTab(tab, scroll) {
+    state.tab = tab;
+    Object.keys(PANELS).forEach((k) => PANELS[k].classList.toggle("is-hidden", k !== tab));
+    $$(".tabbar__btn").forEach((b) => b.classList.toggle("is-active", b.dataset.tab === tab));
+    speech.stop();
+    if (scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // İçeriği yeniden çiz ama kullanıcının bulunduğu yeri koru
+  function refresh() {
+    const y = window.scrollY;
+    renderAll();
+    setTab(state.tab, false);
+    window.scrollTo(0, y);
+  }
+
+  function cycleSpeed() {
+    const i = SPEEDS.indexOf(state.speed);
+    state.speed = SPEEDS[(i + 1) % SPEEDS.length];
+    store.set("speed", state.speed);
+    toast("Konuşma hızı: " + state.speed + "×");
+    refresh();
+  }
+
+  /* =========================================================
+     OLAYLAR (delegasyon)
+     ========================================================= */
+  document.addEventListener("click", function (e) {
+    const t = e.target;
+
+    // seviye
+    const chip = t.closest(".chip");
+    if (chip) {
+      state.level = chip.dataset.level;
+      store.set("level", state.level);
+      speech.stop();
+      renderAll(); setTab(state.tab);
+      toast(state.level.toUpperCase() + " seviyesine geçtin 🚀");
+      return;
+    }
+
+    // senaryo
+    const sc = t.closest(".scard");
+    if (sc) {
+      if (sc.dataset.locked) { toast("Bu senaryo yakında geliyor ✨"); return; }
+      state.scenario = sc.dataset.scenario;
+      store.set("scenario", state.scenario);
+      speech.stop();
+      renderAll(); setTab(state.tab);
+      return;
+    }
+
+    // sekmeler
+    const tb = t.closest(".tabbar__btn");
+    if (tb) { setTab(tb.dataset.tab); return; }
+
+    // TR aç/kapa
+    if (t.closest("#trToggle")) {
+      state.showTR = !state.showTR;
+      store.set("showTR", state.showTR);
+      $("#trToggle").setAttribute("aria-pressed", String(state.showTR));
+      refresh();
+      toast(state.showTR ? "Türkçe çeviri açık" : "Sadece İngilizce — bol şans 😎");
+      return;
+    }
+
+    // hız
+    if (t.closest("#speedBtn") || t.closest("#speedBtn2") || t.closest("#speedBtn3")) { cycleSpeed(); return; }
+
+    // durdur
+    if (t.closest("#stopBtn") || t.closest("#stopBtn2") || t.closest("#stopBtn3")) {
+      speech.stop();
+      $$(".line").forEach((l) => l.classList.remove("is-speaking"));
+      const b = $("#playAll"); if (b) b.textContent = "▶︎ Diyaloğu dinle";
+      return;
+    }
+
+    // diyaloğu baştan sona oynat
+    if (t.closest("#playAll")) {
+      const btn = $("#playAll");
+      const d = data(); if (!d) return;
+      if (speech.playing) {
+        speech.stop();
+        $$(".line").forEach((l) => l.classList.remove("is-speaking"));
+        btn.textContent = "▶︎ Diyaloğu dinle";
+        return;
+      }
+      btn.textContent = "⏸ Çalıyor…";
+      speech.playAll(
+        d.dialogue.lines,
+        (i) => {
+          const rows = $$(".line");
+          rows.forEach((l) => l.classList.remove("is-speaking"));
+          const row = rows[i];
+          if (row) {
+            row.classList.add("is-speaking");
+            row.scrollIntoView({ block: "center", behavior: "smooth" });
+          }
+        },
+        () => {
+          $$(".line").forEach((l) => l.classList.remove("is-speaking"));
+          btn.textContent = "▶︎ Diyaloğu dinle";
+        }
+      );
+      return;
+    }
+
+    // metni sesli oku
+    if (t.closest("#readAloud")) {
+      const d = data(); if (!d) return;
+      speech.say(d.reading.text.join(" "), "officer");
+      toast("Metin okunuyor 🎧");
+      return;
+    }
+
+    // tek replik
+    const line = t.closest(".line");
+    if (line) {
+      const d = data(); if (!d) return;
+      const l = d.dialogue.lines[+line.dataset.i];
+      $$(".line").forEach((x) => x.classList.remove("is-speaking"));
+      line.classList.add("is-speaking");
+      speech.say(l.en, l.role);
+      setTimeout(() => line.classList.remove("is-speaking"), 4200);
+      return;
+    }
+
+    // "data-say" taşıyan her şey (kelime listesi, gramer örneği, telaffuz kartı)
+    const sayer = t.closest("[data-say]");
+    if (sayer) { speech.say(sayer.dataset.say, "officer"); return; }
+
+    // okuma metninde tek kelime
+    if (t.classList.contains("w")) {
+      const w = t.textContent.replace(/[^A-Za-z'’-]/g, "");
+      if (w) speech.say(w, "officer");
+      return;
+    }
+
+    // quiz
+    const opt = t.closest(".quiz__opt");
+    if (opt) {
+      const block = opt.closest(".quiz__block");
+      const right = +opt.dataset.ans;
+      $$(".quiz__opt", block).forEach((o) => { o.classList.remove("is-right", "is-wrong"); });
+      if (+opt.dataset.o === right) {
+        opt.classList.add("is-right");
+        toast("Doğru! 🎉");
+      } else {
+        opt.classList.add("is-wrong");
+        $$(".quiz__opt", block).forEach((o) => { if (+o.dataset.o === right) o.classList.add("is-right"); });
+      }
+      return;
+    }
+  });
+
+  // sayfadan çıkarken/sekme gizlenince sesi kes
+  document.addEventListener("visibilitychange", () => { if (document.hidden) speech.stop(); });
+  window.addEventListener("pagehide", () => speech.stop());
+
+  /* ---------------- başlat ---------------- */
+  $("#trToggle").setAttribute("aria-pressed", String(state.showTR));
+  renderAll();
+  setTab("dialogue");
+})();

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0E0A16" />
+<meta name="description" content="Havalimanı senaryolarıyla İngilizce pratik: diyaloglar, okuma metinleri, gramer ve telaffuz. A1'den C2'ye." />
+<title>SpeakUp ✈️ — Senaryolarla İngilizce</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/css/style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>" />
+</head>
+<body>
+
+<!-- ============ ÜST BAR ============ -->
+<header class="topbar">
+  <div class="topbar__inner">
+    <div class="brand">
+      <span class="brand__mark">✈</span>
+      <div class="brand__text">
+        <strong>SpeakUp</strong>
+        <span>senaryolarla İngilizce</span>
+      </div>
+    </div>
+    <button class="lang-toggle" id="trToggle" aria-pressed="true">
+      <span class="lang-toggle__dot"></span> TR
+    </button>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ============ SEVİYE SEÇİCİ ============ -->
+  <section class="picker" aria-label="Seviye seçimi">
+    <h2 class="picker__title">Seviyen ne?</h2>
+    <div class="chips chips--scroll" id="levelChips" role="tablist"></div>
+    <p class="picker__hint" id="levelHint"></p>
+  </section>
+
+  <!-- ============ SENARYO SEÇİCİ ============ -->
+  <section class="picker" aria-label="Senaryo seçimi">
+    <h2 class="picker__title">Senaryo</h2>
+    <div class="cards--scroll" id="scenarioCards"></div>
+  </section>
+
+  <!-- ============ İÇERİK ============ -->
+  <section class="panel" id="panel-dialogue" data-panel="dialogue"></section>
+  <section class="panel is-hidden" id="panel-reading" data-panel="reading"></section>
+  <section class="panel is-hidden" id="panel-grammar" data-panel="grammar"></section>
+  <section class="panel is-hidden" id="panel-pron" data-panel="pron"></section>
+
+  <footer class="foot">
+    <p>Sesler cihazının kendi konuşma motorunu kullanır — internet gerekmez, veri harcamaz.</p>
+    <p class="foot__small">SpeakUp · statik site · GitHub Pages uyumlu</p>
+  </footer>
+</main>
+
+<!-- ============ ALT MENÜ ============ -->
+<nav class="tabbar" aria-label="Bölümler">
+  <button class="tabbar__btn is-active" data-tab="dialogue">
+    <span class="tabbar__ico">💬</span><span>Diyalog</span>
+  </button>
+  <button class="tabbar__btn" data-tab="reading">
+    <span class="tabbar__ico">📖</span><span>Okuma</span>
+  </button>
+  <button class="tabbar__btn" data-tab="grammar">
+    <span class="tabbar__ico">🧩</span><span>Gramer</span>
+  </button>
+  <button class="tabbar__btn" data-tab="pron">
+    <span class="tabbar__ico">🗣️</span><span>Telaffuz</span>
+  </button>
+</nav>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="assets/js/data.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
