@@ -21,6 +21,8 @@
     tab:      "dialogue",
     showTR:   store.get("showTR", true),
     speed:    store.get("speed", 0.9),
+    // Gramer ve Telaffuz sekmelerinde kapsam: sadece bu senaryo mu, seviyenin tamamı mı
+    scope:    store.get("scope", "scenario"),
   };
 
   const SPEEDS = [0.7, 0.85, 1, 1.15];
@@ -51,6 +53,26 @@
     passenger: { label: "Yolcu",   emoji: "🧍" },
   };
   const role = (r) => (scenario().roles || DEFAULT_ROLES)[r] || DEFAULT_ROLES[r];
+
+  /* ---------------------------------------------------------------
+     Gramer ve telaffuz senaryoya değil SEVİYEYE aittir; senaryo
+     yalnızca hangi konuların öne çıktığını belirler. Bu yüzden iki
+     havuz üretiyoruz: seçili senaryo ve seviyenin tamamı.
+     --------------------------------------------------------------- */
+  function pool(key) {
+    const all = [];
+    SCENARIOS.forEach((s) => {
+      const d = (CONTENT[s.id] || {})[state.level];
+      if (!d || !d[key]) return;
+      d[key].forEach((item) => all.push({ item: item, src: s }));
+    });
+    const mine = all.filter((x) => x.src.id === state.scenario);
+    return {
+      all: all,
+      mine: mine,
+      shown: state.scope === "level" ? all : mine,
+    };
+  }
 
   // Uzun metinleri cümlelere böl — tek uzun utterance bazı tarayıcılarda yarıda kesiliyor
   function toSentences(text) {
@@ -275,19 +297,73 @@
     quizAnswers = {};
   }
 
+  // Kapsam anahtarı ve konu dizini — iki sekmede de aynı bileşen
+  function scopeSwitch(mineCount, allCount, unit) {
+    const lv = state.level.toUpperCase();
+    return `
+      <div class="scope" role="group" aria-label="Kapsam">
+        <button class="scope__btn${state.scope === "scenario" ? " is-active" : ""}" data-scope="scenario">
+          Bu senaryo <b>${mineCount}</b>
+        </button>
+        <button class="scope__btn${state.scope === "level" ? " is-active" : ""}" data-scope="level">
+          ${lv} seviyesinin tamamı <b>${allCount}</b>
+        </button>
+      </div>
+      <p class="scope__note">${state.scope === "level"
+        ? `${lv} seviyesindeki <b>${allCount} ${unit}</b> bir arada. Her kartın üstünde hangi senaryodan geldiği yazıyor.`
+        : `Şu an <b>${SCENARIOS.find((s) => s.id === state.scenario).title}</b> senaryosu için seçilen ${mineCount} ${unit}. Diğerleri kaybolmuyor — sağdaki düğmeyle hepsini gör.`}</p>`;
+  }
+
+  function tocList(items, label) {
+    return `
+      <div class="toc">
+        <p class="toc__label">${label}</p>
+        <div class="toc__chips">
+          ${items.map((x, i) => `
+            <button class="toc__chip" data-goto="topic-${i}">
+              <span class="toc__num">${i + 1}</span>${state.scope === "level" ? x.src.emoji + " " : ""}${esc(x.item.title || x.item.word)}
+            </button>`).join("")}
+        </div>
+      </div>`;
+  }
+
   function renderGrammar() {
     const d = data();
     if (!d) return (PANELS.grammar.innerHTML = emptyState());
 
+    const p = pool("grammar");
+    const lv = LEVELS.find((l) => l.id === state.level);
+
     PANELS.grammar.innerHTML = `
       <div class="section-head">
         <h3>Gramer</h3>
-        <span>${d.grammar.length} konu · ${state.level.toUpperCase()}</span>
+        <span>${lv.name} · ${p.shown.length} konu</span>
       </div>
+
+      <div class="audiobar">
+        <span class="audiobar__hint">Örneğe dokun → dinle</span>
+        <button class="btn btn--ghost btn--speed" id="speedBtn3">${state.speed}×</button>
+        <button class="btn btn--ghost" id="stopBtn3" title="Durdur">■</button>
+      </div>
+
+      <div class="card guide">
+        <p class="guide__lead">
+          Gramer konuları <b>seviyeye</b> göre yazıldı — senaryo sadece hangilerinin öne çıkacağını belirler.
+          Seviyen <b>${lv.name} · ${esc(lv.label)}</b>: ${esc(lv.desc)}.
+        </p>
+        ${scopeSwitch(p.mine.length, p.all.length, "konu")}
+        ${tocList(p.shown, "Bu sekmede ne var?")}
+      </div>
+
       <div class="grid-2">
-      ${d.grammar.map((g) => `
-        <div class="card">
-          <div class="card__head"><h4 class="card__title">${esc(g.title)}</h4></div>
+      ${p.shown.map((x, i) => {
+        const g = x.item;
+        return `
+        <div class="card" id="topic-${i}">
+          <div class="card__head">
+            ${state.scope === "level" ? `<span class="src">${x.src.emoji} ${esc(x.src.title)}</span>` : ""}
+            <h4 class="card__title"><span class="card__num">${i + 1}</span><span class="card__label">${esc(g.title)}</span></h4>
+          </div>
           <p class="gr__explain">${esc(g.explain)}</p>
           ${g.examples.map((ex) => `
             <button class="gr__ex" data-say="${esc(ex.en)}">
@@ -298,7 +374,7 @@
               <span class="gr__ex-spk">🔊</span>
             </button>`).join("")}
           <p class="gr__tip"><b>İpucu:</b> ${esc(g.tip)}</p>
-        </div>`).join("")}
+        </div>`; }).join("")}
       </div>`;
   }
 
@@ -306,32 +382,41 @@
     const d = data();
     if (!d) return (PANELS.pron.innerHTML = emptyState());
 
+    const p = pool("pronunciation");
+    const lv = LEVELS.find((l) => l.id === state.level);
+
     PANELS.pron.innerHTML = `
       <div class="section-head">
         <h3>Telaffuz</h3>
-        <span>${d.pronunciation.length} kelime</span>
+        <span>${lv.name} · ${p.shown.length} kelime</span>
+      </div>
+
+      <div class="audiobar">
+        <button class="btn btn--primary" id="pronPlayAll">▶︎ Sırayla dinle</button>
+        <button class="btn btn--ghost btn--speed" id="speedBtn4">${state.speed}×</button>
+        <button class="btn btn--ghost" id="stopBtn4" title="Durdur">■</button>
+      </div>
+
+      <div class="card guide">
+        <p class="guide__lead">
+          Kelimeler <b>seviyeye</b> göre seçildi — senaryo sadece hangilerinin öne çıkacağını belirler.
+          Karta dokun, dinle, <b>yüksek sesle tekrar et</b>. Zor gelirse hızı <b>0.7×</b>'e düşür.
+        </p>
+        ${scopeSwitch(p.mine.length, p.all.length, "kelime")}
+        ${tocList(p.shown, "Bu sekmede ne var?")}
       </div>
 
       <div class="card">
-        <div class="card__head"><h4 class="card__title">🗣️ Bu senaryonun zor kelimeleri</h4>
-        <p class="card__sub">Karta dokun, dinle, sesli tekrar et. Yavaşlatmak için hızı <b>0.7×</b> yap.</p></div>
-        ${d.pronunciation.map((p) => `
-          <button class="pron" data-say="${esc(p.word)}">
+        ${p.shown.map((x, i) => `
+          <button class="pron" id="topic-${i}" data-say="${esc(x.item.word)}">
             <span class="pron__body">
-              <span class="pron__word">${esc(p.word)}</span>
-              <span class="pron__ipa">${esc(p.ipa)}</span>
-              <span class="pron__tip">${esc(p.tip)}</span>
+              ${state.scope === "level" ? `<span class="src">${x.src.emoji} ${esc(x.src.title)}</span>` : ""}
+              <span class="pron__word">${esc(x.item.word)}</span>
+              <span class="pron__ipa">${esc(x.item.ipa)}</span>
+              <span class="pron__tip">${esc(x.item.tip)}</span>
             </span>
             <span class="pron__btn">🔊</span>
           </button>`).join("")}
-      </div>
-
-      <div class="card">
-        <div class="card__head"><h4 class="card__title">⚡ Hız ayarı</h4></div>
-        <div class="audiobar" style="position:static;margin:0;background:var(--surface-2)">
-          <button class="btn btn--ghost btn--speed" id="speedBtn3" style="flex:1">Konuşma hızı: ${state.speed}×</button>
-          <button class="btn btn--ghost" id="stopBtn3" title="Durdur">■</button>
-        </div>
       </div>
 
       <div class="card">
@@ -365,9 +450,10 @@
      ========================================================= */
   // çalma durdurulduğunda düğme yazılarını ve satır vurgusunu sıfırla
   function resetAudioUI() {
-    $$(".line").forEach((l) => l.classList.remove("is-speaking"));
-    const b1 = $("#playAll");   if (b1) b1.textContent = "▶︎ Diyaloğu dinle";
-    const b2 = $("#readAloud"); if (b2) b2.textContent = "▶︎ Metni dinle";
+    $$(".line, .pron").forEach((l) => l.classList.remove("is-speaking"));
+    const b1 = $("#playAll");     if (b1) b1.textContent = "▶︎ Diyaloğu dinle";
+    const b2 = $("#readAloud");   if (b2) b2.textContent = "▶︎ Metni dinle";
+    const b3 = $("#pronPlayAll"); if (b3) b3.textContent = "▶︎ Sırayla dinle";
   }
 
   function setTab(tab, scroll) {
@@ -438,14 +524,59 @@
     }
 
     // hız
-    if (t.closest("#speedBtn") || t.closest("#speedBtn2") || t.closest("#speedBtn3")) { cycleSpeed(); return; }
+    if (t.closest(".btn--speed")) { cycleSpeed(); return; }
 
     // durdur
-    if (t.closest("#stopBtn") || t.closest("#stopBtn2") || t.closest("#stopBtn3")) {
+    if (t.closest("#stopBtn") || t.closest("#stopBtn2") || t.closest("#stopBtn3") || t.closest("#stopBtn4")) {
       speech.stop();
-      $$(".line").forEach((l) => l.classList.remove("is-speaking"));
-      const b = $("#playAll"); if (b) b.textContent = "▶︎ Diyaloğu dinle";
-      const b2 = $("#readAloud"); if (b2) b2.textContent = "▶︎ Metni dinle";
+      resetAudioUI();
+      return;
+    }
+
+    // kapsam değiştir: bu senaryo ↔ seviyenin tamamı
+    const sb = t.closest(".scope__btn");
+    if (sb) {
+      if (sb.dataset.scope === state.scope) return;
+      state.scope = sb.dataset.scope;
+      store.set("scope", state.scope);
+      speech.stop();
+      renderAll(); setTab(state.tab);
+      toast(state.scope === "level"
+        ? state.level.toUpperCase() + " seviyesinin tamamı gösteriliyor 📚"
+        : "Sadece bu senaryonun konuları 🎯");
+      return;
+    }
+
+    // konu dizininden ilgili karta atla
+    const jump = t.closest(".toc__chip");
+    if (jump) {
+      const el = document.getElementById(jump.dataset.goto);
+      if (el) {
+        const y = el.getBoundingClientRect().top + window.scrollY - 132;
+        // uzun listelerde "smooth" saniyeler sürüyor — dizinden atlarken anında git
+        window.scrollTo({ top: Math.max(y, 0), behavior: "instant" });
+        $$(".is-target").forEach((n) => n.classList.remove("is-target"));
+        el.classList.add("is-target");
+        setTimeout(() => el.classList.remove("is-target"), 1600);
+      }
+      return;
+    }
+
+    // telaffuz kelimelerini sırayla dinle
+    if (t.closest("#pronPlayAll")) {
+      const btn = $("#pronPlayAll");
+      if (speech.playing) { speech.stop(); resetAudioUI(); return; }
+      const items = pool("pronunciation").shown.map((x) => ({ en: x.item.word, role: "officer" }));
+      if (!items.length) return;
+      btn.textContent = "⏸ Çalıyor…";
+      speech.playAll(items,
+        (i) => {
+          $$(".pron").forEach((n) => n.classList.remove("is-speaking"));
+          const row = $$(".pron")[i];
+          if (row) { row.classList.add("is-speaking"); row.scrollIntoView({ block: "center", behavior: "smooth" }); }
+        },
+        () => resetAudioUI()
+      );
       return;
     }
 

@@ -19,8 +19,12 @@ ilkesi ve `Were I…` yapısıyla yürüyen resmî bir müzakere var.
 |---|---|
 | 💬 Diyalog | Seviyeye özel konuşma, Türkçe çeviri, kültürel notlar, satır satır veya baştan sona sesli dinleme. Rol etiketleri senaryoya göre değişir |
 | 📖 Okuma | Seviyeye uygun metin + kelime listesi + 3 soruluk anlama testi (puanlı). Metindeki **her kelimeye dokunup** telaffuzunu dinleyebilirsin |
-| 🧩 Gramer | O seviyede ve o senaryoda gerçekten işine yarayan 4 konu, örnekler ve pratik ipuçları |
-| 🗣️ Telaffuz | Zor kelimeler, IPA yazımı, vurgu ipuçları + Türklerin klasik hata listesi |
+| 🧩 Gramer | Seviyeye göre yazılmış konular, örnekler ve pratik ipuçları. **Bu senaryo (4)** ↔ **seviyenin tamamı (16)** arasında geçiş yapabilirsin |
+| 🗣️ Telaffuz | Zor kelimeler, IPA yazımı, vurgu ipuçları, sırayla dinleme + Türklerin klasik hata listesi. Aynı kapsam anahtarı burada da var (6 ↔ 24) |
+
+Gramer ve telaffuz **senaryoya değil seviyeye** ait; senaryo yalnızca hangi konuların öne çıkacağını belirler.
+Bu yüzden bu iki sekmenin başında ne gördüğünü ve neyin gizli kalmadığını anlatan bir yönlendirme kartı,
+altında da tıklanabilir bir konu dizini var — dizinden bir konuya dokununca ilgili karta atlıyor.
 
 Ekstra: TR çeviriyi tek düğmeyle kapatma, 0.7×–1.15× arası konuşma hızı, seçimlerin tarayıcıda hatırlanması.
 Quizde her soru ilk cevaptan sonra kilitlenir, böylece başlıktaki puan gerçek performansı gösterir.
