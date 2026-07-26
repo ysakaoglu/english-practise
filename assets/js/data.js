@@ -18,12 +18,46 @@ const SCENARIOS = [
     id: "passport",
     emoji: "🛂",
     title: "Pasaport Kontrol",
-    subtitle: "Havalimanı · Memur & Yolcu",
+    subtitle: "Memur & Yolcu",
     ready: true,
+    roles: {
+      officer:   { label: "Memur", emoji: "🛂" },
+      passenger: { label: "Yolcu", emoji: "🧍" },
+    },
   },
-  { id: "checkin",  emoji: "🧳", title: "Check-in Bankosu", subtitle: "Yakında", ready: false },
-  { id: "security", emoji: "🔍", title: "Güvenlik Kontrolü", subtitle: "Yakında", ready: false },
-  { id: "customs",  emoji: "📦", title: "Gümrük", subtitle: "Yakında", ready: false },
+  {
+    id: "checkin",
+    emoji: "🧳",
+    title: "Check-in Bankosu",
+    subtitle: "Görevli & Yolcu",
+    ready: true,
+    roles: {
+      officer:   { label: "Görevli", emoji: "🧳" },
+      passenger: { label: "Yolcu", emoji: "🧍" },
+    },
+  },
+  {
+    id: "security",
+    emoji: "🔍",
+    title: "Güvenlik Kontrolü",
+    subtitle: "Güvenlik & Yolcu",
+    ready: true,
+    roles: {
+      officer:   { label: "Güvenlik", emoji: "👮" },
+      passenger: { label: "Yolcu", emoji: "🧍" },
+    },
+  },
+  {
+    id: "customs",
+    emoji: "📦",
+    title: "Gümrük",
+    subtitle: "Gümrük memuru & Yolcu",
+    ready: true,
+    roles: {
+      officer:   { label: "Gümrük", emoji: "📦" },
+      passenger: { label: "Yolcu", emoji: "🧍" },
+    },
+  },
 ];
 
 /* =========================================================

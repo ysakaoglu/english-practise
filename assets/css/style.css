@@ -367,6 +367,9 @@ main{
   background:rgba(255,77,157,.13); border-color:var(--pink); color:var(--pink-2);
 }
 .quiz__block + .quiz__block{ margin-top:20px; padding-top:18px; border-top:1px solid rgba(51,35,75,.55); }
+/* cevaplanan soru kilitlenir — puan anlamlı kalsın */
+.quiz__block.is-answered .quiz__opt{ pointer-events:none; }
+.quiz__block.is-answered .quiz__opt:not(.is-right):not(.is-wrong){ opacity:.45; }
 
 /* ---------------- GRAMER ---------------- */
 .gr__explain{ font-size:15px; color:var(--muted); margin-bottom:12px; line-height:1.6; }

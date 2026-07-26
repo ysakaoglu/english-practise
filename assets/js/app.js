@@ -44,6 +44,21 @@
 
   const data = () => (CONTENT[state.scenario] || {})[state.level] || null;
 
+  // Aktif senaryo ve onun rol etiketleri (her senaryoda taraflar farklı isimlenir)
+  const scenario = () => SCENARIOS.find((s) => s.id === state.scenario) || SCENARIOS[0];
+  const DEFAULT_ROLES = {
+    officer:   { label: "Görevli", emoji: "👤" },
+    passenger: { label: "Yolcu",   emoji: "🧍" },
+  };
+  const role = (r) => (scenario().roles || DEFAULT_ROLES)[r] || DEFAULT_ROLES[r];
+
+  // Uzun metinleri cümlelere böl — tek uzun utterance bazı tarayıcılarda yarıda kesiliyor
+  function toSentences(text) {
+    // lookbehind kullanmıyoruz — eski Safari sürümlerinde dosyanın tamamını bozar
+    const parts = String(text).match(/[^.!?]+[.!?]*/g) || [String(text)];
+    return parts.map((s) => s.trim()).filter(Boolean);
+  }
+
   /* =========================================================
      SES — Web Speech API
      ========================================================= */
@@ -174,9 +189,9 @@
       <div class="card" id="lines">
         ${dl.lines.map((l, i) => `
           <button class="line line--${l.role}" data-i="${i}">
-            <span class="line__av">${l.role === "officer" ? "🛂" : "🧍"}</span>
+            <span class="line__av">${role(l.role).emoji}</span>
             <span class="line__body">
-              <span class="line__who">${l.role === "officer" ? "Memur" : "Yolcu"}</span>
+              <span class="line__who">${esc(role(l.role).label)}</span>
               <span class="line__en">${esc(l.en)}</span>
               ${state.showTR ? `<span class="line__tr">${esc(l.tr)}</span>` : ""}
               ${l.note ? `<span class="line__note">💡 ${esc(l.note)}</span>` : ""}
@@ -196,6 +211,9 @@
         </p>
       </div>`;
   }
+
+  // quiz: her soru için ilk cevap saklanır, puan ona göre hesaplanır
+  let quizAnswers = {};
 
   function wrapWords(text) {
     return esc(text).split(" ").map((w) => `<span class="w">${w}</span>`).join(" ");
@@ -240,10 +258,12 @@
         </div>
       </div>
 
-      <div class="card" id="quiz">
-        <div class="card__head"><h4 class="card__title">✅ Anladın mı?</h4></div>
+      <div class="card" id="quiz" data-total="${r.quiz.length}">
+        <div class="card__head">
+          <h4 class="card__title">✅ Anladın mı? <span class="badge" id="quizScore">0 / ${r.quiz.length}</span></h4>
+        </div>
         ${r.quiz.map((q, qi) => `
-          <div class="quiz__block">
+          <div class="quiz__block" data-qi="${qi}">
             <p class="quiz__q"><i>${qi + 1}.</i> ${esc(q.q)}</p>
             <div class="quiz__opts">
               ${q.options.map((o, oi) => `
@@ -251,6 +271,8 @@
             </div>
           </div>`).join("")}
       </div>`;
+
+    quizAnswers = {};
   }
 
   function renderGrammar() {
@@ -341,11 +363,19 @@
   /* =========================================================
      SEKME GEÇİŞİ
      ========================================================= */
+  // çalma durdurulduğunda düğme yazılarını ve satır vurgusunu sıfırla
+  function resetAudioUI() {
+    $$(".line").forEach((l) => l.classList.remove("is-speaking"));
+    const b1 = $("#playAll");   if (b1) b1.textContent = "▶︎ Diyaloğu dinle";
+    const b2 = $("#readAloud"); if (b2) b2.textContent = "▶︎ Metni dinle";
+  }
+
   function setTab(tab, scroll) {
     state.tab = tab;
     Object.keys(PANELS).forEach((k) => PANELS[k].classList.toggle("is-hidden", k !== tab));
     $$(".tabbar__btn").forEach((b) => b.classList.toggle("is-active", b.dataset.tab === tab));
     speech.stop();
+    resetAudioUI();
     if (scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -415,6 +445,7 @@
       speech.stop();
       $$(".line").forEach((l) => l.classList.remove("is-speaking"));
       const b = $("#playAll"); if (b) b.textContent = "▶︎ Diyaloğu dinle";
+      const b2 = $("#readAloud"); if (b2) b2.textContent = "▶︎ Metni dinle";
       return;
     }
 
@@ -448,10 +479,18 @@
       return;
     }
 
-    // metni sesli oku
+    // metni sesli oku — cümle cümle kuyruğa alınır, uzun metinlerde kesilmez
     if (t.closest("#readAloud")) {
+      const btn = $("#readAloud");
       const d = data(); if (!d) return;
-      speech.say(d.reading.text.join(" "), "officer");
+      if (speech.playing) {
+        speech.stop();
+        btn.textContent = "▶︎ Metni dinle";
+        return;
+      }
+      const items = toSentences(d.reading.text.join(" ")).map((s) => ({ en: s, role: "officer" }));
+      btn.textContent = "⏸ Okunuyor…";
+      speech.playAll(items, null, () => { btn.textContent = "▶︎ Metni dinle"; });
       toast("Metin okunuyor 🎧");
       return;
     }
@@ -483,14 +522,32 @@
     const opt = t.closest(".quiz__opt");
     if (opt) {
       const block = opt.closest(".quiz__block");
+      const qi = block.dataset.qi;
+      if (qi in quizAnswers) return;                 // cevaplanmış soru kilitli
+
       const right = +opt.dataset.ans;
-      $$(".quiz__opt", block).forEach((o) => { o.classList.remove("is-right", "is-wrong"); });
-      if (+opt.dataset.o === right) {
-        opt.classList.add("is-right");
-        toast("Doğru! 🎉");
-      } else {
-        opt.classList.add("is-wrong");
+      const correct = +opt.dataset.o === right;
+      quizAnswers[qi] = correct;
+      block.classList.add("is-answered");
+
+      opt.classList.add(correct ? "is-right" : "is-wrong");
+      if (!correct) {
         $$(".quiz__opt", block).forEach((o) => { if (+o.dataset.o === right) o.classList.add("is-right"); });
+      }
+
+      // puanı güncelle
+      const quiz = $("#quiz");
+      const total = +quiz.dataset.total;
+      const keys = Object.keys(quizAnswers);
+      const score = keys.filter((k) => quizAnswers[k]).length;
+      const badge = $("#quizScore");
+      badge.textContent = score + " / " + total;
+      badge.classList.toggle("badge--pink", score < keys.length);
+
+      if (keys.length === total) {
+        toast(score === total ? "Hepsi doğru! 🏆" : score + "/" + total + " doğru — metni bir daha oku 📖");
+      } else {
+        toast(correct ? "Doğru! 🎉" : "Bu değil — doğrusu işaretlendi");
       }
       return;
     }

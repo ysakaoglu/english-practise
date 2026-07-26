@@ -1,18 +1,29 @@
 # SpeakUp ✈️ — Senaryolarla İngilizce
 
 Havalimanı senaryolarıyla İngilizce pratik yapmak için hazırlanmış, **mobil öncelikli** statik web sitesi.
-Şu an aktif senaryo: **Pasaport Kontrol (memur & yolcu)**. Tüm içerik A1'den C2'ye altı CEFR seviyesinde ayrı ayrı yazıldı.
+Dört senaryo × altı CEFR seviyesi = **24 bağımsız ders**; her ders diyalog, okuma, gramer ve telaffuz bölümlerinden oluşuyor.
+
+| Senaryo | Taraflar |
+|---|---|
+| 🛂 Pasaport Kontrol | Memur & Yolcu |
+| 🧳 Check-in Bankosu | Görevli & Yolcu |
+| 🔍 Güvenlik Kontrolü | Güvenlik & Yolcu |
+| 📦 Gümrük | Gümrük memuru & Yolcu |
+
+Seviyeler gerçekten farklı yazıldı: A1'de "Passport, please." varken C2'de taşıma sözleşmesi, ölçülülük
+ilkesi ve `Were I…` yapısıyla yürüyen resmî bir müzakere var.
 
 ## Neler var
 
 | Bölüm | İçerik |
 |---|---|
-| 💬 Diyalog | Seviyeye özel memur–yolcu konuşması, Türkçe çeviri, kültürel notlar, satır satır veya baştan sona sesli dinleme |
-| 📖 Okuma | Seviyeye uygun metin + kelime listesi + 3 soruluk anlama testi. Metindeki **her kelimeye dokunup** telaffuzunu dinleyebilirsin |
+| 💬 Diyalog | Seviyeye özel konuşma, Türkçe çeviri, kültürel notlar, satır satır veya baştan sona sesli dinleme. Rol etiketleri senaryoya göre değişir |
+| 📖 Okuma | Seviyeye uygun metin + kelime listesi + 3 soruluk anlama testi (puanlı). Metindeki **her kelimeye dokunup** telaffuzunu dinleyebilirsin |
 | 🧩 Gramer | O seviyede ve o senaryoda gerçekten işine yarayan 4 konu, örnekler ve pratik ipuçları |
 | 🗣️ Telaffuz | Zor kelimeler, IPA yazımı, vurgu ipuçları + Türklerin klasik hata listesi |
 
 Ekstra: TR çeviriyi tek düğmeyle kapatma, 0.7×–1.15× arası konuşma hızı, seçimlerin tarayıcıda hatırlanması.
+Quizde her soru ilk cevaptan sonra kilitlenir, böylece başlıktaki puan gerçek performansı gösterir.
 
 ## Ses nasıl çalışıyor?
 
@@ -49,33 +60,48 @@ python3 -m http.server 8000
 
 ## Yeni senaryo ekleme
 
-Tüm içerik [`assets/js/data.js`](assets/js/data.js) içinde. İki adım:
+Seviye tanımları ve senaryo listesi [`assets/js/data.js`](assets/js/data.js) içinde; her senaryonun içeriği
+kendi dosyasında. Üç adım:
 
-1. `SCENARIOS` dizisine yeni senaryoyu ekle ve `ready: true` yap:
+1. `SCENARIOS` dizisine yeni senaryoyu ekle. `roles`, diyalogda görünen taraf isimlerini belirler:
 
 ```js
-{ id: "checkin", emoji: "🧳", title: "Check-in Bankosu", subtitle: "Havalimanı · Görevli & Yolcu", ready: true }
+{
+  id: "lostluggage", emoji: "🧭", title: "Kayıp Bagaj",
+  subtitle: "Görevli & Yolcu", ready: true,
+  roles: {
+    officer:   { label: "Görevli", emoji: "🧭" },
+    passenger: { label: "Yolcu",   emoji: "🧍" },
+  },
+}
 ```
 
-2. `CONTENT` içine aynı `id` ile altı seviyeyi doldur:
+2. `assets/js/data-lostluggage.js` dosyasını oluştur ve altı seviyeyi doldur:
 
 ```js
-CONTENT.checkin = {
+CONTENT.lostluggage = {
   a1: { dialogue: {...}, reading: {...}, grammar: [...], pronunciation: [...] },
   a2: { ... }, b1: { ... }, b2: { ... }, c1: { ... }, c2: { ... }
 };
 ```
 
-Veri şeması `passport` senaryosunda birebir görülebilir. Arayüz tarafında hiçbir şey değiştirmen gerekmez.
+3. `index.html` içinde `app.js`'ten **önce** script etiketini ekle.
+
+Veri şeması mevcut senaryolarda birebir görülebilir. Arayüz tarafında hiçbir şey değiştirmen gerekmez.
+`ready: false` verirsen kart kilitli görünür ve "yakında" mesajı gösterir — içeriği hazır olmayan
+senaryoyu listede tutmak istersen bunu kullan.
 
 ## Dosya yapısı
 
 ```
 index.html
 assets/
-  css/style.css     — tema, mobil düzen, bileşenler
-  js/data.js        — tüm içerik (senaryo × seviye)
-  js/app.js         — durum yönetimi, render, Web Speech API
+  css/style.css        — tema, mobil düzen, bileşenler
+  js/data.js           — seviyeler + senaryo listesi + Pasaport içeriği
+  js/data-checkin.js   — Check-in içeriği (6 seviye)
+  js/data-security.js  — Güvenlik içeriği (6 seviye)
+  js/data-customs.js   — Gümrük içeriği (6 seviye)
+  js/app.js            — durum yönetimi, render, Web Speech API
 .nojekyll
 ```
 
